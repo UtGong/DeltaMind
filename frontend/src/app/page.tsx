@@ -20,6 +20,13 @@ type SourceItem = {
   published_date?: string | null;
   evidence_type?: string;
   copied_from?: string | null;
+
+  stance_confidence?: number | null;
+  stance_reasoning?: string | null;
+  raw_evidence_text?: string | null;
+
+  similarity_group?: string | null;
+  independence_reason?: string | null;
 };
 
 type DeltaSignal = {
@@ -93,6 +100,7 @@ type VerifyResponse = {
 
 const exampleClaims = [
   "MGM Macau is building a new hotel and casino in 2028",
+  "MGM Macau operates casino resort properties in Macau",
   "Company X partnered with Company Y to launch Product Z in Macau next Tuesday.",
   "Company X received a new gaming license approval in Macau.",
   "A gaming operator announced a new AI-powered casino analytics platform.",
@@ -139,6 +147,54 @@ function clampScore(value: number, max = 20) {
   return Math.max(0, Math.min(100, (value / max) * 100));
 }
 
+function sourceSortScore(source: SourceItem) {
+  const stancePriority: Record<SourceItem["stance"], number> = {
+    supports: 0,
+    contradicts: 1,
+    partially_supports: 2,
+    unclear: 3,
+  };
+
+  return (
+    stancePriority[source.stance] * 1000 +
+    (source.source_tier ?? 9) * 100 -
+    (source.authority_score ?? 0) -
+    (source.independence_score ?? 0) * 10
+  );
+}
+
+function atomicClaimSortScore(claim: AtomicClaim) {
+  const rolePriority: Record<AtomicClaim["role"], number> = {
+    core: 0,
+    supporting_detail: 1,
+    contextual_detail: 2,
+  };
+
+  return rolePriority[claim.role] ?? 9;
+}
+
+function evidenceMapSortScore(item: EvidenceMapItem) {
+  const statusPriority: Record<EvidenceMapItem["status"], number> = {
+    contradicted: 0,
+    uncorroborated: 1,
+    uncertain: 2,
+    partially_verified: 3,
+    verified: 4,
+  };
+
+  return statusPriority[item.status] ?? 9;
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <div className="pt-2">
+      <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">
+        {children}
+      </p>
+    </div>
+  );
+}
+
 export default function Home() {
   const [claim, setClaim] = useState(exampleClaims[0]);
   const [domain, setDomain] = useState("real_gaming");
@@ -174,6 +230,22 @@ export default function Home() {
 
   const score = result?.trust_index ?? result?.confidence_score ?? 0;
   const label = result?.trust_label ?? result?.verdict ?? "";
+
+  const sortedEvidenceMap = result?.evidence_map
+    ? [...result.evidence_map].sort(
+        (a, b) => evidenceMapSortScore(a) - evidenceMapSortScore(b)
+      )
+    : [];
+
+  const sortedAtomicClaims = result?.atomic_claims
+    ? [...result.atomic_claims].sort(
+        (a, b) => atomicClaimSortScore(a) - atomicClaimSortScore(b)
+      )
+    : [];
+
+  const sortedSources = result?.sources
+    ? [...result.sources].sort((a, b) => sourceSortScore(a) - sourceSortScore(b))
+    : [];
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
@@ -244,6 +316,8 @@ export default function Home() {
 
         {result && (
           <section className="mt-8 grid gap-6">
+            <SectionLabel>Overall</SectionLabel>
+
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -275,7 +349,9 @@ export default function Home() {
               </div>
             </div>
 
-            {result.evidence_map && result.evidence_map.length > 0 && (
+            <SectionLabel>Detail</SectionLabel>
+
+            {sortedEvidenceMap.length > 0 && (
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold">Evidence Map</h3>
                 <p className="mt-2 text-sm text-slate-500">
@@ -283,7 +359,7 @@ export default function Home() {
                 </p>
 
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
-                  {result.evidence_map.map((item, index) => (
+                  {sortedEvidenceMap.map((item, index) => (
                     <div
                       key={`${item.label}-${index}`}
                       className={`rounded-2xl border p-4 ${claimStatusClass(item.status)}`}
@@ -298,7 +374,7 @@ export default function Home() {
               </div>
             )}
 
-            {result.atomic_claims && result.atomic_claims.length > 0 && (
+            {sortedAtomicClaims.length > 0 && (
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold">Atomic Claims</h3>
                 <p className="mt-2 text-sm text-slate-500">
@@ -306,7 +382,7 @@ export default function Home() {
                 </p>
 
                 <div className="mt-5 grid gap-4">
-                  {result.atomic_claims.map((atomic) => (
+                  {sortedAtomicClaims.map((atomic) => (
                     <div
                       key={atomic.id}
                       className="rounded-2xl border border-slate-200 p-5"
@@ -367,70 +443,75 @@ export default function Home() {
               </div>
             )}
 
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-xl font-semibold">Source Delta Signals</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Signals generated from source authority, contradiction, provenance,
+                temporal decay, and echo-chamber risk.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                {result.delta_signals.map((signal) => (
+                  <div
+                    key={signal.type}
+                    className={`rounded-2xl border p-4 ${impactClass(signal.impact)}`}
+                  >
+                    <p className="font-medium">{formatLabel(signal.type)}</p>
+                    <p className="mt-1 text-sm leading-6">{signal.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <SectionLabel>More Detail</SectionLabel>
+
+            {result.scoring_breakdown && (
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold">Source Delta Signals</h3>
+                <h3 className="text-xl font-semibold">Scoring Breakdown</h3>
                 <p className="mt-2 text-sm text-slate-500">
-                  Signals generated from source authority, contradiction, provenance,
-                  temporal decay, and echo-chamber risk.
+                  Rule-based evidence aggregation for the current prototype.
                 </p>
 
-                <div className="mt-4 space-y-3">
-                  {result.delta_signals.map((signal) => (
-                    <div
-                      key={signal.type}
-                      className={`rounded-2xl border p-4 ${impactClass(signal.impact)}`}
-                    >
-                      <p className="font-medium">{formatLabel(signal.type)}</p>
-                      <p className="mt-1 text-sm leading-6">{signal.description}</p>
-                    </div>
-                  ))}
+                <div className="mt-5 space-y-4">
+                  {Object.entries(result.scoring_breakdown)
+                    .filter(([key]) => key !== "final_score")
+                    .map(([key, value]) => {
+                      const max = key.includes("penalty")
+                        ? 15
+                        : key.includes("recency")
+                          ? 10
+                          : 20;
+
+                      return (
+                        <div key={key}>
+                          <div className="mb-1 flex justify-between text-sm">
+                            <span className="capitalize text-slate-700">
+                              {formatLabel(key)}
+                            </span>
+                            <span className="font-medium">{value}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full ${scoreBarClass(key)}`}
+                              style={{ width: `${clampScore(Number(value), max)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
-
-              {result.scoring_breakdown && (
-                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-xl font-semibold">Scoring Breakdown</h3>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Rule-based evidence aggregation for the current prototype.
-                  </p>
-
-                  <div className="mt-5 space-y-4">
-                    {Object.entries(result.scoring_breakdown)
-                      .filter(([key]) => key !== "final_score")
-                      .map(([key, value]) => {
-                        const max = key.includes("penalty") ? 15 : key.includes("recency") ? 10 : 20;
-                        return (
-                          <div key={key}>
-                            <div className="mb-1 flex justify-between text-sm">
-                              <span className="capitalize text-slate-700">
-                                {formatLabel(key)}
-                              </span>
-                              <span className="font-medium">{value}</span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className={`h-full rounded-full ${scoreBarClass(key)}`}
-                                style={{ width: `${clampScore(Number(value), max)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
 
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-xl font-semibold">Retrieved Sources</h3>
               <p className="mt-2 text-sm text-slate-500">
-                Sources are evaluated by stance, credibility, freshness, authority,
-                provenance, and independence.
+                Sources are sorted by stance, authority, and independence. They are
+                evaluated by credibility, freshness, provenance, and echo-chamber risk.
               </p>
 
               <div className="mt-5 grid gap-4">
-                {result.sources.map((source) => (
+                {sortedSources.map((source) => (
                   <div
                     key={source.url}
                     className="rounded-2xl border border-slate-200 p-5"
@@ -482,6 +563,24 @@ export default function Home() {
                               Copied from:
                             </span>{" "}
                             {source.copied_from ?? "None detected"}
+                          </p>
+                          <p>
+                            <span className="font-medium text-slate-900">
+                              Similarity group:
+                            </span>{" "}
+                            {source.similarity_group ?? "None detected"}
+                          </p>
+                          <p>
+                            <span className="font-medium text-slate-900">
+                              Stance confidence:
+                            </span>{" "}
+                            {source.stance_confidence ?? "Heuristic / not available"}
+                          </p>
+                          <p className="md:col-span-2">
+                            <span className="font-medium text-slate-900">
+                              Independence reason:
+                            </span>{" "}
+                            {source.independence_reason ?? "No dependency signal detected."}
                           </p>
                         </div>
 
