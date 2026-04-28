@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import Literal, List, Optional
 
 from dotenv import load_dotenv
@@ -28,11 +29,26 @@ def ai_claim_decomposition_enabled() -> bool:
     )
 
 
+def get_model_candidates() -> List[str]:
+    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite").split(",")
+
+    models = [primary] + [m.strip() for m in fallbacks if m.strip()]
+    seen = set()
+    deduped = []
+
+    for model in models:
+        if model not in seen:
+            deduped.append(model)
+            seen.add(model)
+
+    return deduped
+
+
 def decompose_claim_with_ai(claim: str) -> Optional[ClaimDecompositionResult]:
     if not ai_claim_decomposition_enabled():
         return None
 
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     prompt = f"""
@@ -52,22 +68,30 @@ Input claim:
 {claim}
 """
 
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": ClaimDecompositionResult.model_json_schema(),
-            },
-        )
+    for model in get_model_candidates():
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": ClaimDecompositionResult.model_json_schema(),
+                    },
+                )
 
-        if not response.text:
-            return None
+                if not response.text:
+                    continue
 
-        parsed = json.loads(response.text)
-        return ClaimDecompositionResult.model_validate(parsed)
+                parsed = json.loads(response.text)
+                return ClaimDecompositionResult.model_validate(parsed)
 
-    except (json.JSONDecodeError, ValidationError, Exception) as exc:
-        print(f"[Gemini claim decomposition fallback] {exc}")
-        return None
+            except Exception as exc:
+                print(
+                    f"[Gemini claim decomposition fallback] "
+                    f"model={model}, attempt={attempt + 1}, "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                time.sleep(1.5 * (attempt + 1))
+
+    return None

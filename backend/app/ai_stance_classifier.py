@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Literal, Optional
+import time
+from typing import Literal, Optional, List
 
 from dotenv import load_dotenv
 from google import genai
@@ -17,6 +18,22 @@ class AIStanceResult(BaseModel):
     evidence_quote: str
 
 
+def get_model_candidates() -> List[str]:
+    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite").split(",")
+
+    models = [primary] + [m.strip() for m in fallbacks if m.strip()]
+    seen = set()
+    deduped = []
+
+    for model in models:
+        if model not in seen:
+            deduped.append(model)
+            seen.add(model)
+
+    return deduped
+
+
 def ai_enabled() -> bool:
     return (
         os.getenv("USE_AI_STANCE", "false").lower() == "true"
@@ -29,13 +46,6 @@ def classify_stance_with_ai(
     evidence_text: str,
     source_title: str = "",
 ) -> Optional[AIStanceResult]:
-    """
-    Gemini-based stance classification.
-
-    Returns None when Gemini is disabled or fails, so the system can fall back
-    to heuristic stance classification.
-    """
-
     if not ai_enabled():
         return None
 
@@ -45,8 +55,6 @@ def classify_stance_with_ai(
         return None
 
     evidence_text = evidence_text[:3500]
-
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     prompt = f"""
@@ -73,22 +81,30 @@ Evidence:
 {evidence_text}
 """
 
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": AIStanceResult.model_json_schema(),
-            },
-        )
+    for model in get_model_candidates():
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": AIStanceResult.model_json_schema(),
+                    },
+                )
 
-        if not response.text:
-            return None
+                if not response.text:
+                    continue
 
-        parsed = json.loads(response.text)
-        return AIStanceResult.model_validate(parsed)
+                parsed = json.loads(response.text)
+                return AIStanceResult.model_validate(parsed)
 
-    except (json.JSONDecodeError, ValidationError, Exception) as exc:
-        print(f"[Gemini stance fallback] {exc}")
-        return None
+            except Exception as exc:
+                print(
+                    f"[Gemini stance fallback] "
+                    f"model={model}, attempt={attempt + 1}, "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                time.sleep(1.5 * (attempt + 1))
+
+    return None

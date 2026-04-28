@@ -30,7 +30,7 @@ def get_trust_label(score: int) -> str:
         return "Uncertain"
     if score >= 20:
         return "Weakly supported"
-    return "Contradicted / unreliable"
+    return "Unsupported / insufficient evidence"
 
 
 def source_effective_weight(source: SourceItem) -> float:
@@ -630,6 +630,8 @@ def verify_claim_with_ledger(claim: str, domain: str = "general_web") -> VerifyR
     )
 
 
+
+
 def build_atomic_claims_from_ai_or_fallback(
     claim: str,
     sources: List[SourceItem],
@@ -637,13 +639,8 @@ def build_atomic_claims_from_ai_or_fallback(
     use_ai: bool,
 ) -> List[AtomicClaim]:
     """
-    Builds atomic claims for real-web modes using Gemini decomposition.
-    Then assigns a simple status based on source-level stance evidence.
-
-    This is still an early version:
-    - decomposition is AI-based;
-    - status assignment is rule-based from source stance;
-    - later we can classify stance per atomic claim.
+    Builds atomic claims for real-web modes using Gemini decomposition,
+    then evaluates each atomic claim against source-level evidence.
     """
 
     if not use_ai:
@@ -651,83 +648,45 @@ def build_atomic_claims_from_ai_or_fallback(
 
     try:
         from app.ai_claim_decomposer import decompose_claim_with_ai
-        result = decompose_claim_with_ai(claim)
+        decomposition = decompose_claim_with_ai(claim)
     except Exception as exc:
-        print(f"[Atomic claim fallback] {exc}")
-        result = None
+        print(f"[Atomic claim decomposition fallback] {type(exc).__name__}: {exc}")
+        decomposition = None
 
-    if not result or not result.atomic_claims:
+    if not decomposition or not decomposition.atomic_claims:
+        print("[Atomic claim decomposition fallback] No decomposition result returned.")
         return build_atomic_claims(fallback_scenario)
 
-    supporting_sources = [
-        s.id for s in sources if s.stance in ["supports", "partially_supports"]
-    ]
-    conflicting_sources = [
-        s.id for s in sources if s.stance == "contradicts"
-    ]
+    initial_atomic_claims: List[AtomicClaim] = []
 
-    direct_support_count = sum(1 for s in sources if s.stance == "supports")
-    partial_support_count = sum(1 for s in sources if s.stance == "partially_supports")
-    contradiction_count = sum(1 for s in sources if s.stance == "contradicts")
-    unclear_count = sum(1 for s in sources if s.stance == "unclear")
-
-    atomic_claims: List[AtomicClaim] = []
-
-    for idx, atomic in enumerate(result.atomic_claims, start=1):
-        if direct_support_count >= 2 and contradiction_count == 0:
-            status = "verified"
-            confidence = 82
-            explanation = (
-                "Multiple sources support the broader claim, and no direct contradiction was detected. "
-                "This atomic claim is treated as likely verified in the current prototype."
-            )
-        elif direct_support_count >= 1 and contradiction_count == 0:
-            status = "partially_verified"
-            confidence = 68
-            explanation = (
-                "At least one source supports the broader claim, but independent confirmation is limited."
-            )
-        elif partial_support_count >= 1 and contradiction_count == 0:
-            status = "partially_verified"
-            confidence = 58
-            explanation = (
-                "Some sources partially overlap with the broader claim, but direct evidence is limited."
-            )
-        elif contradiction_count > 0 and direct_support_count == 0:
-            status = "contradicted"
-            confidence = 28
-            explanation = (
-                "At least one source contradicts the broader claim, and no direct supporting source was detected."
-            )
-        elif unclear_count >= len(sources) * 0.6:
-            status = "uncorroborated"
-            confidence = 35
-            explanation = (
-                "Most retrieved sources are only topically related and do not directly verify this atomic claim."
-            )
-        else:
-            status = "uncertain"
-            confidence = 45
-            explanation = (
-                "The current evidence is mixed or insufficient for this atomic claim."
-            )
-
-        missing_evidence = None
-        if status in ["uncorroborated", "uncertain"]:
-            missing_evidence = "No strong direct evidence was found for this atomic claim."
-
-        atomic_claims.append(
+    for idx, atomic in enumerate(decomposition.atomic_claims, start=1):
+        initial_atomic_claims.append(
             AtomicClaim(
                 id=f"c{idx}",
                 text=atomic.text,
                 role=atomic.role,
-                status=status,
-                confidence_score=confidence,
-                explanation=explanation,
-                supporting_source_ids=supporting_sources,
-                conflicting_source_ids=conflicting_sources,
-                missing_evidence=missing_evidence,
+                status="uncertain",
+                confidence_score=40,
+                explanation="This atomic claim has been decomposed by AI and is pending source-level evaluation.",
+                supporting_source_ids=[],
+                conflicting_source_ids=[],
+                missing_evidence=None,
             )
         )
 
-    return atomic_claims
+    try:
+        from app.atomic_evidence_evaluator import evaluate_atomic_claims_against_sources
+
+        evaluated = evaluate_atomic_claims_against_sources(
+            atomic_claims=initial_atomic_claims,
+            sources=sources,
+            max_sources_per_claim=5,
+        )
+
+        print(f"[Atomic evidence evaluation] Evaluated {len(evaluated)} atomic claims.")
+        return evaluated
+
+    except Exception as exc:
+        print(f"[Atomic evidence evaluation fallback] {type(exc).__name__}: {exc}")
+        return initial_atomic_claims
+

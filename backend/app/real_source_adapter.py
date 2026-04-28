@@ -189,6 +189,8 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
     sources: List[SourceItem] = []
 
     for idx, item in enumerate(raw_results, start=1):
+        stance_confidence = None
+        stance_reasoning = None
         page_text = fetch_page_text(item["url"])
         evidence_span = ""
 
@@ -238,6 +240,9 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
                 published_date=None,
                 evidence_type=evidence_type,
                 copied_from=copied_from,
+                stance_confidence=stance_confidence,
+                stance_reasoning=stance_reasoning,
+                raw_evidence_text=stance_basis,
             )
         )
 

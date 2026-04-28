@@ -44,6 +44,9 @@ class SourceItem(BaseModel):
     published_date: Optional[str] = None
     evidence_type: str
     copied_from: Optional[str] = None
+    stance_confidence: Optional[int] = None
+    stance_reasoning: Optional[str] = None
+    raw_evidence_text: Optional[str] = None
 
 
 class DeltaSignal(BaseModel):
