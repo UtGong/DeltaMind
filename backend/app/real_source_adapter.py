@@ -3,6 +3,8 @@ from typing import List, Set
 
 from app.models import SourceItem
 from app.web_retriever import search_public_web
+from app.page_fetcher import fetch_page_text
+from app.evidence_extractor import extract_best_evidence_span
 
 
 STOPWORDS = {
@@ -82,7 +84,6 @@ def has_required_years(claim: str, evidence_text: str) -> bool:
         return True
 
     evidence_years = extract_years(evidence_text)
-
     return claim_years.issubset(evidence_years)
 
 
@@ -95,8 +96,7 @@ def has_required_actions(claim: str, evidence_text: str) -> bool:
     return all(text_has_action_group(evidence_text, group) for group in action_groups)
 
 
-def heuristic_stance(claim: str, title: str, snippet: str) -> str:
-    evidence_text = f"{title} {snippet}"
+def heuristic_stance(claim: str, evidence_text: str) -> str:
     evidence_l = normalize_text(evidence_text)
 
     contradiction_terms = [
@@ -113,6 +113,9 @@ def heuristic_stance(claim: str, title: str, snippet: str) -> str:
         "canceled",
         "delayed",
         "denial",
+        "not planning",
+        "no plan",
+        "has not announced",
     ]
 
     if any(term in evidence_l for term in contradiction_terms):
@@ -122,16 +125,12 @@ def heuristic_stance(claim: str, title: str, snippet: str) -> str:
     year_match = has_required_years(claim, evidence_text)
     action_match = has_required_actions(claim, evidence_text)
 
-    # Critical fix:
-    # A source cannot support a time-specific claim if it does not mention the same year.
     if not year_match:
         return "unclear"
 
-    # A source cannot support an action/event claim if it only mentions related entities.
     if not action_match:
         return "unclear"
 
-    # Now we allow support only after critical constraints are satisfied.
     if overlap >= 0.55:
         return "supports"
 
@@ -141,20 +140,42 @@ def heuristic_stance(claim: str, title: str, snippet: str) -> str:
     return "unclear"
 
 
-def build_evidence_summary(stance: str, snippet: str) -> str:
-    if not snippet:
-        return "No snippet available from search result."
+def build_evidence_summary(stance: str, evidence_text: str, fallback_snippet: str) -> str:
+    evidence = evidence_text or fallback_snippet or "No usable evidence text available."
+
+    if len(evidence) > 900:
+        evidence = evidence[:900].rstrip() + "..."
 
     if stance == "supports":
-        return f"This search result appears to directly support the claim: {snippet}"
+        return f"This source appears to directly support the claim: {evidence}"
 
     if stance == "partially_supports":
-        return f"This search result partially overlaps with the claim, but may not confirm every detail: {snippet}"
+        return f"This source partially overlaps with the claim, but may not confirm every detail: {evidence}"
 
     if stance == "contradicts":
-        return f"This search result appears to contradict or challenge the claim: {snippet}"
+        return f"This source appears to contradict or challenge the claim: {evidence}"
 
-    return f"This source is topically related, but the snippet does not directly verify the specific claim: {snippet}"
+    return f"This source is topically related, but the extracted evidence does not directly verify the specific claim: {evidence}"
+
+
+def estimate_freshness_score(text: str) -> int:
+    years = extract_years(text)
+
+    if not years:
+        return 60
+
+    latest_year = max(int(y) for y in years)
+
+    if latest_year >= 2026:
+        return 85
+    if latest_year == 2025:
+        return 75
+    if latest_year == 2024:
+        return 65
+    if latest_year == 2023:
+        return 55
+
+    return 45
 
 
 def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List[SourceItem]:
@@ -168,22 +189,32 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
     sources: List[SourceItem] = []
 
     for idx, item in enumerate(raw_results, start=1):
-        stance = heuristic_stance(
-            claim=claim,
-            title=item["title"],
-            snippet=item["snippet"],
-        )
+        page_text = fetch_page_text(item["url"])
+        evidence_span = ""
+
+        if page_text:
+            evidence_span = extract_best_evidence_span(
+                claim=claim,
+                page_text=page_text,
+                max_sentences=3,
+            )
+
+        # Use extracted page evidence if available; otherwise fall back to search snippet.
+        stance_basis = evidence_span or item["snippet"] or f"{item['title']} {item['snippet']}"
+        stance = heuristic_stance(claim=claim, evidence_text=stance_basis)
 
         independence_score = 1.0
         copied_from = None
-        provenance_origin = "Search result source"
+        provenance_origin = "Fetched page content" if page_text else "Search result snippet only"
 
         if any(existing.url == item["url"] for existing in sources):
             independence_score = 0.2
             copied_from = sources[0].id if sources else None
             provenance_origin = "Duplicate search result"
 
-        freshness_score = 65
+        freshness_score = estimate_freshness_score(stance_basis)
+
+        evidence_type = "extracted_page_evidence" if evidence_span else "search_snippet"
 
         sources.append(
             SourceItem(
@@ -196,7 +227,8 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
                 stance=stance,
                 evidence_summary=build_evidence_summary(
                     stance=stance,
-                    snippet=item["snippet"],
+                    evidence_text=evidence_span,
+                    fallback_snippet=item["snippet"],
                 ),
                 source_tier=item["source_tier"],
                 source_role=item["source_role"],
@@ -204,7 +236,7 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
                 independence_score=independence_score,
                 provenance_origin=provenance_origin,
                 published_date=None,
-                evidence_type="search_snippet",
+                evidence_type=evidence_type,
                 copied_from=copied_from,
             )
         )

@@ -4,3 +4,7 @@ pydantic
 python-dotenv
 ddgs
 tldextract
+httpx
+beautifulsoup4
+lxml
+google-genai
