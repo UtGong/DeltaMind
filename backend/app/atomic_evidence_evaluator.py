@@ -210,6 +210,7 @@ def aggregate_atomic_evidence(
     missing_evidence = None
     if status in ["uncorroborated", "uncertain"]:
         missing_evidence = "No strong direct evidence was found for this atomic claim."
+        support_ids = []
 
     return AtomicClaim(
         id=atomic_claim.id,

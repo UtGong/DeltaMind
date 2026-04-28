@@ -1,3 +1,4 @@
+from app.source_independence import apply_source_independence_analysis
 import re
 from typing import List, Set
 
@@ -246,4 +247,4 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
             )
         )
 
-    return sources
+    return apply_source_independence_analysis(sources)

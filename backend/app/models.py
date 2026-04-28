@@ -48,6 +48,10 @@ class SourceItem(BaseModel):
     stance_reasoning: Optional[str] = None
     raw_evidence_text: Optional[str] = None
 
+    # Source independence / echo-chamber analysis
+    similarity_group: Optional[str] = None
+    independence_reason: Optional[str] = None
+
 
 class DeltaSignal(BaseModel):
     type: str
