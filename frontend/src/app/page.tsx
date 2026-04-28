@@ -127,8 +127,10 @@ export default function Home() {
                 onChange={(e) => setDomain(e.target.value)}
                 className="ml-0 mt-2 block rounded-xl border border-slate-200 bg-white px-4 py-2 md:ml-3 md:inline-block"
               >
-                <option value="general_web">General Web</option>
-                <option value="gaming_industry">Gaming Industry</option>
+                <option value="general_web">Mock: General Web</option>
+                <option value="gaming_industry">Mock: Gaming Industry</option>
+                <option value="real_web">Real Web Search</option>
+                <option value="real_gaming">Real Gaming Web Search</option>
               </select>
             </div>
 
