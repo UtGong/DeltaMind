@@ -52,6 +52,22 @@ class SourceItem(BaseModel):
     similarity_group: Optional[str] = None
     independence_reason: Optional[str] = None
 
+    # Source authority / reliability prior
+    normalized_domain: Optional[str] = None
+    reliability_prior: Optional[float] = None
+    bias_risk: Optional[str] = None
+    authority_reason: Optional[str] = None
+
+    # Temporal reasoning
+    detected_publication_year: Optional[int] = None
+    detected_event_years: List[int] = Field(default_factory=list)
+    temporal_status: Optional[str] = None
+    temporal_decay_score: Optional[float] = None
+
+    # Strong provenance / citation tracing
+    detected_origin: Optional[str] = None
+    citation_links: List[str] = Field(default_factory=list)
+
 
 class DeltaSignal(BaseModel):
     type: str
@@ -91,6 +107,34 @@ class ScoringBreakdown(BaseModel):
     final_score: int
 
 
+class BeliefMass(BaseModel):
+    belief: float
+    disbelief: float
+    uncertainty: float
+    trust_index: int
+    explanation: str
+
+
+class EvidenceGraphNode(BaseModel):
+    id: str
+    type: str
+    label: str
+    metadata: dict = Field(default_factory=dict)
+
+
+class EvidenceGraphEdge(BaseModel):
+    source: str
+    target: str
+    relation: str
+    weight: Optional[float] = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class EvidenceGraph(BaseModel):
+    nodes: List[EvidenceGraphNode] = Field(default_factory=list)
+    edges: List[EvidenceGraphEdge] = Field(default_factory=list)
+
+
 class VerifyResponse(BaseModel):
     input_claim: str
     normalized_claim: str
@@ -109,4 +153,11 @@ class VerifyResponse(BaseModel):
     atomic_claims: List[AtomicClaim]
     evidence_map: List[EvidenceMapItem]
     scoring_breakdown: ScoringBreakdown
+
+    # Research-grade technical framework outputs
+    belief_mass: Optional[BeliefMass] = None
+    evidence_graph: Optional[EvidenceGraph] = None
+    temporal_summary: Optional[str] = None
+    provenance_summary: Optional[str] = None
+
     system_notes: List[str] = Field(default_factory=list)

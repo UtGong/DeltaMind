@@ -186,6 +186,18 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
         query = f"{claim} gaming industry casino Macau"
 
     raw_results = search_public_web(query=query, max_results=max_results)
+    
+    BLOCKED_DOMAINS = {
+        "youtube.com",
+        "instagram.com",
+        "pinterest.com",
+        "alamy.com",
+    }
+
+    raw_results = [
+        item for item in raw_results
+        if item.get("domain") not in BLOCKED_DOMAINS
+    ]
 
     sources: List[SourceItem] = []
 

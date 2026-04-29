@@ -1,5 +1,6 @@
 import re
 from typing import Dict, List, Optional, Set
+from urllib.parse import urlparse
 
 from app.models import SourceItem
 
@@ -17,6 +18,8 @@ KNOWN_ORIGIN_PATTERNS = [
     ("GlobalData", r"\bglobaldata\b"),
     ("Reuters", r"\breuters\b"),
     ("Associated Press", r"\bassociated press\b|\bap news\b"),
+    ("Macau Government", r"\bmacau government\b|\bgov\.mo\b"),
+    ("MGM China", r"\bmgm china holdings\b|\bmgmchinaholdings\b"),
     ("Company announcement", r"\bpress release\b|\bcompany announcement\b|\bofficial announcement\b"),
 ]
 
@@ -54,6 +57,18 @@ def source_text(source: SourceItem) -> str:
     )
 
 
+def extract_links(text: str) -> List[str]:
+    links = re.findall(r"https?://[^\s\]\"')<>]+", text or "")
+    cleaned = []
+
+    for link in links:
+        parsed = urlparse(link)
+        if parsed.netloc:
+            cleaned.append(link.rstrip(".,;"))
+
+    return sorted(set(cleaned))
+
+
 def detect_named_origin(source: SourceItem) -> Optional[str]:
     text = normalize_text(source_text(source))
 
@@ -68,25 +83,20 @@ def apply_source_independence_analysis(
     sources: List[SourceItem],
     similarity_threshold: float = 0.42,
 ) -> List[SourceItem]:
-    """
-    Detects simple echo-chamber / source dependency patterns.
-
-    Current prototype signals:
-    1. Named shared origin, e.g., several sources citing Bloomberg.
-    2. High evidence-text similarity across sources.
-    3. Duplicate or near-duplicate titles.
-
-    This does not prove plagiarism or copying. It estimates dependency risk.
-    """
-
     if not sources:
         return sources
 
-    # First pass: named origin detection.
+    # Citation extraction.
+    for source in sources:
+        text = source_text(source)
+        source.citation_links = extract_links(text)
+
+    # Named origin grouping.
     origin_groups: Dict[str, List[SourceItem]] = {}
 
     for source in sources:
         origin = detect_named_origin(source)
+        source.detected_origin = origin
 
         if origin:
             origin_groups.setdefault(origin, []).append(source)
@@ -99,7 +109,7 @@ def apply_source_independence_analysis(
 
         anchor = grouped_sources[0]
         anchor.similarity_group = f"origin-{group_id}"
-        anchor.independence_reason = f"Potential origin source for shared reference: {origin}"
+        anchor.independence_reason = f"Potential origin/anchor source for shared reference: {origin}"
 
         for source in grouped_sources[1:]:
             source.similarity_group = f"origin-{group_id}"
@@ -113,7 +123,7 @@ def apply_source_independence_analysis(
 
         group_id += 1
 
-    # Second pass: semantic similarity clustering.
+    # Similarity grouping.
     for i, source_i in enumerate(sources):
         text_i = source_text(source_i)
 
@@ -147,9 +157,21 @@ def apply_source_independence_analysis(
 
         group_id += 1
 
-    # Default independence explanations.
     for source in sources:
         if not source.independence_reason:
             source.independence_reason = "No dependency signal detected in the current prototype."
 
     return sources
+
+
+def build_provenance_summary(sources: List[SourceItem]) -> str:
+    dependent = [s for s in sources if s.copied_from or (s.independence_score < 0.75)]
+    origins = sorted(set(s.detected_origin for s in sources if s.detected_origin))
+    groups = sorted(set(s.similarity_group for s in sources if s.similarity_group))
+
+    return (
+        f"{len(sources)} source(s) analyzed. "
+        f"{len(dependent)} source(s) show possible dependency or echo-chamber risk. "
+        f"Detected named origin(s): {origins if origins else 'none'}. "
+        f"Similarity/provenance group(s): {groups if groups else 'none'}."
+    )

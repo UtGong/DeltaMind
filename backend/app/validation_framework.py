@@ -1,3 +1,8 @@
+from app.source_authority import apply_source_authority_profiles
+from app.temporal_reasoning import apply_temporal_reasoning, build_temporal_summary
+from app.source_independence import build_provenance_summary
+from app.dempster_shafer import compute_belief_mass_from_sources, adjust_belief_with_atomic_claims
+from app.evidence_graph import build_evidence_graph
 from typing import List, Tuple
 from app.real_source_adapter import real_sources_from_web
 
@@ -583,6 +588,10 @@ def verify_claim_with_ledger(claim: str, domain: str = "general_web") -> VerifyR
         sources = real_sources_from_web(claim=claim, domain=real_domain, max_results=8)
     else:
         sources = build_sources_for_scenario(scenario)
+    # Research-grade enrichment layers
+    sources = apply_source_authority_profiles(sources)
+    sources = apply_temporal_reasoning(sources, claim)
+
     use_real_mode = domain in ["real_web", "real_gaming"]
 
     atomic_claims = build_atomic_claims_from_ai_or_fallback(
@@ -593,9 +602,22 @@ def verify_claim_with_ledger(claim: str, domain: str = "general_web") -> VerifyR
     )
     scoring = compute_scoring_breakdown(sources, atomic_claims)
 
-    score = scoring.final_score
+    belief_mass = compute_belief_mass_from_sources(sources)
+    belief_mass = adjust_belief_with_atomic_claims(belief_mass, atomic_claims)
+
+    # Use formal evidence-theoretic score as the main Trust Index.
+    score = belief_mass.trust_index
     trust_label = get_trust_label(score)
     confidence_label = get_confidence_label(score)
+
+    evidence_graph = build_evidence_graph(
+        input_claim=claim,
+        atomic_claims=atomic_claims,
+        sources=sources,
+    )
+
+    temporal_summary = build_temporal_summary(sources, claim)
+    provenance_summary = build_provenance_summary(sources)
 
     delta_signals = build_delta_signals(sources)
     evidence_map = build_evidence_map(atomic_claims)
@@ -622,6 +644,10 @@ def verify_claim_with_ledger(claim: str, domain: str = "general_web") -> VerifyR
         atomic_claims=atomic_claims,
         evidence_map=evidence_map,
         scoring_breakdown=scoring,
+        belief_mass=belief_mass,
+        evidence_graph=evidence_graph,
+        temporal_summary=temporal_summary,
+        provenance_summary=provenance_summary,
         system_notes=[
             "This is a mocked prototype. Source retrieval and stance classification are simulated.",
             "The current scoring model is rule-based and designed for explainability.",

@@ -228,7 +228,7 @@ def aggregate_atomic_evidence(
 def evaluate_atomic_claims_against_sources(
     atomic_claims: List[AtomicClaim],
     sources: List[SourceItem],
-    max_sources_per_claim: int = 5,
+    max_sources_per_claim: int = 2,
 ) -> List[AtomicClaim]:
     """
     Evaluates each atomic claim against the strongest retrieved sources.
