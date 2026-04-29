@@ -14,11 +14,10 @@ def normalize_domain(url: str) -> str:
 
 
 SOURCE_PROFILES: Dict[str, Dict] = {
-    # Official / regulatory
     "gov.mo": {
         "source_tier": 0,
         "source_type": "regulatory_source",
-        "source_role": "Regulatory / legal authority",
+        "source_role": "Macau regulatory / government source",
         "authority_score": 98,
         "credibility_score": 95,
         "reliability_prior": 0.95,
@@ -38,7 +37,7 @@ SOURCE_PROFILES: Dict[str, Dict] = {
     "mgmchinaholdings.com": {
         "source_tier": 1,
         "source_type": "official_company_source",
-        "source_role": "Official company source",
+        "source_role": "Official MGM China source",
         "authority_score": 88,
         "credibility_score": 86,
         "reliability_prior": 0.82,
@@ -48,15 +47,13 @@ SOURCE_PROFILES: Dict[str, Dict] = {
     "mgmresorts.com": {
         "source_tier": 1,
         "source_type": "official_company_source",
-        "source_role": "Official company source",
-        "authority_score": 88,
-        "credibility_score": 86,
-        "reliability_prior": 0.82,
+        "source_role": "Official MGM Resorts source",
+        "authority_score": 86,
+        "credibility_score": 84,
+        "reliability_prior": 0.80,
         "bias_risk": "medium",
-        "reason": "Official company source; strong for announcements, weak for independent evaluation.",
+        "reason": "Official company source; strong for announcements, but not independent verification.",
     },
-
-    # High-quality / business news
     "reuters.com": {
         "source_tier": 2,
         "source_type": "independent_news",
@@ -69,7 +66,7 @@ SOURCE_PROFILES: Dict[str, Dict] = {
     },
     "bloomberg.com": {
         "source_tier": 2,
-        "source_type": "independent_news",
+        "source_type": "business_news",
         "source_role": "High-quality business news",
         "authority_score": 86,
         "credibility_score": 86,
@@ -97,8 +94,6 @@ SOURCE_PROFILES: Dict[str, Dict] = {
         "bias_risk": "medium",
         "reason": "Often syndicates third-party reports; useful but should be traced to origin.",
     },
-
-    # Gaming / hospitality industry press
     "agbrief.com": {
         "source_tier": 3,
         "source_type": "gaming_industry_press",
@@ -108,6 +103,26 @@ SOURCE_PROFILES: Dict[str, Dict] = {
         "reliability_prior": 0.70,
         "bias_risk": "medium",
         "reason": "Specialized gaming industry source; useful for domain-specific reporting.",
+    },
+    "asgam.com": {
+        "source_tier": 3,
+        "source_type": "gaming_industry_press",
+        "source_role": "Inside Asian Gaming / gaming industry press",
+        "authority_score": 76,
+        "credibility_score": 76,
+        "reliability_prior": 0.72,
+        "bias_risk": "medium",
+        "reason": "Specialized Asian gaming industry source.",
+    },
+    "ggrasia.com": {
+        "source_tier": 3,
+        "source_type": "gaming_industry_press",
+        "source_role": "Gaming industry press",
+        "authority_score": 76,
+        "credibility_score": 76,
+        "reliability_prior": 0.72,
+        "bias_risk": "medium",
+        "reason": "Specialized gaming industry source.",
     },
     "hotelmanagement-network.com": {
         "source_tier": 3,
@@ -129,8 +144,6 @@ SOURCE_PROFILES: Dict[str, Dict] = {
         "bias_risk": "medium",
         "reason": "Industry source; useful for venue, resort, and visitor-experience reporting.",
     },
-
-    # Reference / lower-priority sources
     "wikipedia.org": {
         "source_tier": 4,
         "source_type": "reference_source",

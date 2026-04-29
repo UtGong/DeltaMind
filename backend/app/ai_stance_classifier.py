@@ -50,7 +50,6 @@ def classify_stance_with_ai(
         return None
 
     evidence_text = (evidence_text or "").strip()
-
     if len(evidence_text) < 40:
         return None
 
@@ -67,7 +66,6 @@ def classify_stance_with_ai(
     )
 
     cached = get_cached("stance_classification", cache_payload)
-
     if cached:
         try:
             return AIStanceResult.model_validate(cached)
@@ -81,14 +79,16 @@ You are a strict evidence verifier.
 
 Classify whether the provided evidence supports a specific claim.
 
+Labels:
+- supports: evidence directly confirms the key entities, event/action, time, and location.
+- partially_supports: evidence confirms important parts but misses details.
+- contradicts: evidence directly denies, refutes, or gives incompatible information.
+- unclear: evidence is related but does not verify the claim.
+
 Rules:
-- Do not classify as "supports" just because the source is topically related.
-- "supports" means the evidence directly confirms the key entities, event/action, and important time/location details in the claim.
-- "partially_supports" means the evidence confirms some important parts but misses or weakens other details.
-- "contradicts" means the evidence directly denies, refutes, or gives incompatible information.
-- "unclear" means the evidence is related but does not verify the claim.
+- Do not classify as supports just because the source is topically related.
 - If the claim includes a year, date, location, license, partnership, construction, launch, approval, or acquisition, those details matter.
-- Prefer "unclear" over "supports" when evidence is only background information.
+- Prefer unclear over supports when evidence is only background information.
 
 Claim:
 {claim}
@@ -101,37 +101,26 @@ Evidence:
 """
 
     for model in get_model_candidates():
-        for attempt in range(1):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json",
-                        "response_schema": AIStanceResult.model_json_schema(),
-                    },
-                )
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": AIStanceResult.model_json_schema(),
+                },
+            )
 
-                if not response.text:
-                    continue
+            if not response.text:
+                continue
 
-                parsed = json.loads(response.text)
-                result = AIStanceResult.model_validate(parsed)
+            parsed = json.loads(response.text)
+            result = AIStanceResult.model_validate(parsed)
+            set_cached("stance_classification", cache_payload, result.model_dump())
+            return result
 
-                set_cached(
-                    "stance_classification",
-                    cache_payload,
-                    result.model_dump(),
-                )
-
-                return result
-
-            except Exception as exc:
-                print(
-                    f"[Gemini stance fallback] "
-                    f"model={model}, attempt={attempt + 1}, "
-                    f"{type(exc).__name__}: {exc}"
-                )
-                time.sleep(0.5)
+        except Exception as exc:
+            print(f"[Gemini stance fallback] model={model}, {type(exc).__name__}: {exc}")
+            time.sleep(0.5)
 
     return None

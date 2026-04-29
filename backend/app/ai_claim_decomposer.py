@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from typing import Literal, List, Optional
 
@@ -46,15 +47,10 @@ def get_model_candidates() -> List[str]:
 
 
 def heuristic_decompose_claim(claim: str) -> ClaimDecompositionResult:
-    # Safe fallback when Gemini quota is exhausted.
-    atomic_claims = [
-        DecomposedClaim(text=claim.strip(), role="core")
-    ]
+    claim = claim.strip()
+    atomic_claims = [DecomposedClaim(text=claim, role="core")]
 
-    # If a year is present, make time a separate checkable detail.
-    import re
     years = re.findall(r"\b(?:19|20)\d{2}\b", claim)
-
     if years:
         atomic_claims.append(
             DecomposedClaim(
@@ -87,9 +83,8 @@ You are a claim decomposition assistant for a news verification system.
 Break the input claim into small, checkable atomic claims.
 
 Rules:
-- Do not over-decompose trivial facts unless they are important for verification.
 - Identify one core claim.
-- Identify supporting details such as product, place, date, organization, approval, partnership, construction, or launch details.
+- Identify supporting details such as product, place, date, organization, approval, partnership, construction, launch, acquisition, or license detail.
 - Each atomic claim must be independently checkable.
 - Avoid vague phrasing.
 - Return 2 to 6 atomic claims.
@@ -99,45 +94,28 @@ Input claim:
 """
 
     for model in get_model_candidates():
-        for attempt in range(1):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json",
-                        "response_schema": ClaimDecompositionResult.model_json_schema(),
-                    },
-                )
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": ClaimDecompositionResult.model_json_schema(),
+                },
+            )
 
-                if not response.text:
-                    continue
+            if not response.text:
+                continue
 
-                parsed = json.loads(response.text)
-                result = ClaimDecompositionResult.model_validate(parsed)
+            parsed = json.loads(response.text)
+            result = ClaimDecompositionResult.model_validate(parsed)
+            set_cached("claim_decomposition", cache_payload, result.model_dump())
+            return result
 
-                set_cached(
-                    "claim_decomposition",
-                    cache_payload,
-                    result.model_dump(),
-                )
-
-                return result
-
-            except Exception as exc:
-                print(
-                    f"[Gemini claim decomposition fallback] "
-                    f"model={model}, attempt={attempt + 1}, "
-                    f"{type(exc).__name__}: {exc}"
-                )
-                time.sleep(0.5)
+        except Exception as exc:
+            print(f"[Gemini claim decomposition fallback] model={model}, {type(exc).__name__}: {exc}")
+            time.sleep(0.5)
 
     fallback = heuristic_decompose_claim(claim)
-
-    set_cached(
-        "claim_decomposition",
-        cache_payload,
-        fallback.model_dump(),
-    )
-
+    set_cached("claim_decomposition", cache_payload, fallback.model_dump())
     return fallback
