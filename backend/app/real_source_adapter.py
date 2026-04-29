@@ -1,4 +1,3 @@
-from app.source_independence import apply_source_independence_analysis
 import re
 from typing import List, Set
 
@@ -6,7 +5,25 @@ from app.models import SourceItem
 from app.web_retriever import search_public_web
 from app.page_fetcher import fetch_page_text
 from app.evidence_extractor import extract_best_evidence_span
+from app.ai_stance_classifier import classify_stance_with_ai
+from app.source_independence import apply_source_independence_analysis
 
+
+BLOCKED_DOMAINS = {
+    "youtube.com",
+    "instagram.com",
+    "pinterest.com",
+    "alamy.com",
+}
+
+LOW_VALUE_TITLE_TERMS = [
+    "stock photo",
+    "youtube",
+    "instagram",
+    "pinterest",
+    "photo",
+    "roblox",
+]
 
 STOPWORDS = {
     "the", "and", "for", "with", "from", "that", "this", "into", "will",
@@ -34,6 +51,28 @@ ACTION_GROUPS = {
         "takeover", "purchase", "bought"
     },
 }
+
+
+def filter_low_quality_results(raw_results: list[dict]) -> list[dict]:
+    filtered = []
+
+    for item in raw_results:
+        domain = item.get("domain", "")
+        title = (item.get("title") or "").lower()
+        snippet = (item.get("snippet") or item.get("body") or "").lower()
+
+        if domain in BLOCKED_DOMAINS:
+            continue
+
+        if any(term in title for term in LOW_VALUE_TITLE_TERMS):
+            continue
+
+        if "the site owner hides the web page description" in snippet:
+            continue
+
+        filtered.append(item)
+
+    return filtered
 
 
 def normalize_text(text: str) -> str:
@@ -141,22 +180,30 @@ def heuristic_stance(claim: str, evidence_text: str) -> str:
     return "unclear"
 
 
-def build_evidence_summary(stance: str, evidence_text: str, fallback_snippet: str) -> str:
+def build_evidence_summary(
+    stance: str,
+    evidence_text: str,
+    fallback_snippet: str,
+    ai_reasoning: str | None = None,
+) -> str:
     evidence = evidence_text or fallback_snippet or "No usable evidence text available."
 
     if len(evidence) > 900:
         evidence = evidence[:900].rstrip() + "..."
 
     if stance == "supports":
-        return f"This source appears to directly support the claim: {evidence}"
+        prefix = "This source appears to directly support the claim"
+    elif stance == "partially_supports":
+        prefix = "This source partially supports the claim, but may not confirm every detail"
+    elif stance == "contradicts":
+        prefix = "This source appears to contradict or challenge the claim"
+    else:
+        prefix = "This source is topically related, but the extracted evidence does not directly verify the specific claim"
 
-    if stance == "partially_supports":
-        return f"This source partially overlaps with the claim, but may not confirm every detail: {evidence}"
+    if ai_reasoning:
+        return f"{prefix}. AI reasoning: {ai_reasoning} Evidence: {evidence}"
 
-    if stance == "contradicts":
-        return f"This source appears to contradict or challenge the claim: {evidence}"
-
-    return f"This source is topically related, but the extracted evidence does not directly verify the specific claim: {evidence}"
+    return f"{prefix}: {evidence}"
 
 
 def estimate_freshness_score(text: str) -> int:
@@ -186,24 +233,14 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
         query = f"{claim} gaming industry casino Macau"
 
     raw_results = search_public_web(query=query, max_results=max_results)
-    
-    BLOCKED_DOMAINS = {
-        "youtube.com",
-        "instagram.com",
-        "pinterest.com",
-        "alamy.com",
-    }
-
-    raw_results = [
-        item for item in raw_results
-        if item.get("domain") not in BLOCKED_DOMAINS
-    ]
+    raw_results = filter_low_quality_results(raw_results)
 
     sources: List[SourceItem] = []
 
     for idx, item in enumerate(raw_results, start=1):
         stance_confidence = None
         stance_reasoning = None
+
         page_text = fetch_page_text(item["url"])
         evidence_span = ""
 
@@ -214,9 +251,21 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
                 max_sentences=3,
             )
 
-        # Use extracted page evidence if available; otherwise fall back to search snippet.
         stance_basis = evidence_span or item["snippet"] or f"{item['title']} {item['snippet']}"
-        stance = heuristic_stance(claim=claim, evidence_text=stance_basis)
+
+        ai_result = classify_stance_with_ai(
+            claim=claim,
+            evidence_text=stance_basis,
+            source_title=item["title"],
+        )
+
+        if ai_result:
+            stance = ai_result.stance
+            stance_confidence = ai_result.confidence
+            stance_reasoning = ai_result.reasoning
+        else:
+            stance = heuristic_stance(claim=claim, evidence_text=stance_basis)
+            stance_reasoning = "Heuristic fallback was used because AI stance classification was unavailable."
 
         independence_score = 1.0
         copied_from = None
@@ -228,7 +277,6 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
             provenance_origin = "Duplicate search result"
 
         freshness_score = estimate_freshness_score(stance_basis)
-
         evidence_type = "extracted_page_evidence" if evidence_span else "search_snippet"
 
         sources.append(
@@ -244,6 +292,7 @@ def real_sources_from_web(claim: str, domain: str, max_results: int = 8) -> List
                     stance=stance,
                     evidence_text=evidence_span,
                     fallback_snippet=item["snippet"],
+                    ai_reasoning=stance_reasoning,
                 ),
                 source_tier=item["source_tier"],
                 source_role=item["source_role"],

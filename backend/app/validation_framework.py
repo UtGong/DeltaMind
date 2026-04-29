@@ -706,7 +706,7 @@ def build_atomic_claims_from_ai_or_fallback(
         evaluated = evaluate_atomic_claims_against_sources(
             atomic_claims=initial_atomic_claims,
             sources=sources,
-            max_sources_per_claim=5,
+            max_sources_per_claim=2,
         )
 
         print(f"[Atomic evidence evaluation] Evaluated {len(evaluated)} atomic claims.")

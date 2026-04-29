@@ -5,7 +5,9 @@ from typing import Literal, Optional, List
 
 from dotenv import load_dotenv
 from google import genai
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+
+from app.ai_cache import get_cached, set_cached
 
 
 load_dotenv()
@@ -19,17 +21,15 @@ class AIStanceResult(BaseModel):
 
 
 def get_model_candidates() -> List[str]:
-    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite").split(",")
+    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash").split(",")
 
     models = [primary] + [m.strip() for m in fallbacks if m.strip()]
-    seen = set()
     deduped = []
 
     for model in models:
-        if model not in seen:
+        if model not in deduped:
             deduped.append(model)
-            seen.add(model)
 
     return deduped
 
@@ -54,7 +54,26 @@ def classify_stance_with_ai(
     if len(evidence_text) < 40:
         return None
 
-    evidence_text = evidence_text[:3500]
+    evidence_text = evidence_text[:2800]
+
+    cache_payload = json.dumps(
+        {
+            "claim": claim,
+            "source_title": source_title,
+            "evidence_text": evidence_text,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    cached = get_cached("stance_classification", cache_payload)
+
+    if cached:
+        try:
+            return AIStanceResult.model_validate(cached)
+        except Exception:
+            pass
+
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     prompt = f"""
@@ -82,7 +101,7 @@ Evidence:
 """
 
     for model in get_model_candidates():
-        for attempt in range(2):
+        for attempt in range(1):
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -97,7 +116,15 @@ Evidence:
                     continue
 
                 parsed = json.loads(response.text)
-                return AIStanceResult.model_validate(parsed)
+                result = AIStanceResult.model_validate(parsed)
+
+                set_cached(
+                    "stance_classification",
+                    cache_payload,
+                    result.model_dump(),
+                )
+
+                return result
 
             except Exception as exc:
                 print(
@@ -105,6 +132,6 @@ Evidence:
                     f"model={model}, attempt={attempt + 1}, "
                     f"{type(exc).__name__}: {exc}"
                 )
-                time.sleep(1.5 * (attempt + 1))
+                time.sleep(0.5)
 
     return None

@@ -5,7 +5,9 @@ from typing import Literal, List, Optional
 
 from dotenv import load_dotenv
 from google import genai
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+
+from app.ai_cache import get_cached, set_cached
 
 
 load_dotenv()
@@ -30,24 +32,52 @@ def ai_claim_decomposition_enabled() -> bool:
 
 
 def get_model_candidates() -> List[str]:
-    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite").split(",")
+    primary = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash").split(",")
 
     models = [primary] + [m.strip() for m in fallbacks if m.strip()]
-    seen = set()
     deduped = []
 
     for model in models:
-        if model not in seen:
+        if model not in deduped:
             deduped.append(model)
-            seen.add(model)
 
     return deduped
 
 
+def heuristic_decompose_claim(claim: str) -> ClaimDecompositionResult:
+    # Safe fallback when Gemini quota is exhausted.
+    atomic_claims = [
+        DecomposedClaim(text=claim.strip(), role="core")
+    ]
+
+    # If a year is present, make time a separate checkable detail.
+    import re
+    years = re.findall(r"\b(?:19|20)\d{2}\b", claim)
+
+    if years:
+        atomic_claims.append(
+            DecomposedClaim(
+                text=f"The claim is associated with the year {years[0]}.",
+                role="supporting_detail",
+            )
+        )
+
+    return ClaimDecompositionResult(atomic_claims=atomic_claims[:6])
+
+
 def decompose_claim_with_ai(claim: str) -> Optional[ClaimDecompositionResult]:
+    cache_payload = claim.strip()
+    cached = get_cached("claim_decomposition", cache_payload)
+
+    if cached:
+        try:
+            return ClaimDecompositionResult.model_validate(cached)
+        except Exception:
+            pass
+
     if not ai_claim_decomposition_enabled():
-        return None
+        return heuristic_decompose_claim(claim)
 
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -69,7 +99,7 @@ Input claim:
 """
 
     for model in get_model_candidates():
-        for attempt in range(2):
+        for attempt in range(1):
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -84,7 +114,15 @@ Input claim:
                     continue
 
                 parsed = json.loads(response.text)
-                return ClaimDecompositionResult.model_validate(parsed)
+                result = ClaimDecompositionResult.model_validate(parsed)
+
+                set_cached(
+                    "claim_decomposition",
+                    cache_payload,
+                    result.model_dump(),
+                )
+
+                return result
 
             except Exception as exc:
                 print(
@@ -92,6 +130,14 @@ Input claim:
                     f"model={model}, attempt={attempt + 1}, "
                     f"{type(exc).__name__}: {exc}"
                 )
-                time.sleep(1.5 * (attempt + 1))
+                time.sleep(0.5)
 
-    return None
+    fallback = heuristic_decompose_claim(claim)
+
+    set_cached(
+        "claim_decomposition",
+        cache_payload,
+        fallback.model_dump(),
+    )
+
+    return fallback
