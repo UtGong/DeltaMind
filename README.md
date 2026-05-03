@@ -1,62 +1,217 @@
-# DeltaMind Prototype
+# DeltaMind
 
-DeltaMind is a prototype of an **AI Trust & Verification Engine** designed to evaluate the reliability of public web and gaming-industry claims.
+**DeltaMind** is an AI Trust & Verification Engine that evaluates whether public web claims are supported, contradicted, uncertain, or insufficiently evidenced.
 
-Instead of simply answering whether a claim is true or false, DeltaMind builds an explainable **Evidence Triangulation Ledger**. The system decomposes a claim into smaller atomic claims, maps each claim to supporting or conflicting evidence, evaluates source authority and independence, detects potential echo-chamber reporting, and generates an explainable trust index.
+Instead of returning a simple chatbot-style answer, DeltaMind decomposes a claim into checkable units, retrieves sources, extracts evidence, evaluates source reliability, detects provenance and echo-chamber risks, models temporal consistency, and generates an explainable trust index.
 
-This repository currently contains a **mocked full-stack demo**. The frontend and backend are functional, while the verification results are simulated through rule-based mock data. Future versions will integrate real web retrieval and AI-based claim extraction, stance classification, and evidence reasoning.
+## Core Question
 
-## Core Idea
+> Which answer is reliable, and why?
 
-DeltaMind does not simply count how many sources mention a claim. It evaluates:
+DeltaMind is designed to help users understand:
 
-- what parts of the claim are supported;
-- which sources provide the evidence;
-- whether the sources are authoritative or low-quality;
-- whether multiple sources are independent or repeating the same origin;
-- whether evidence is recent or outdated;
-- whether there are contradictions or missing expected evidence;
-- why the system assigns a certain trust score.
+- What evidence supports a claim
+- What evidence is missing
+- Which sources are reliable
+- Whether sources are truly independent
+- Whether the evidence matches the claimed timeline
+- Why the system assigns a high or low confidence score
 
-The goal is to make AI-assisted verification more transparent, auditable, and useful for human decision-making.
+## Current Prototype
 
-## Current Prototype Features
+The current prototype supports:
 
-- Claim/topic input
-- Mocked public source retrieval
-- Source authority tiers
-- Source credibility and freshness scores
-- Source stance classification
-- Atomic claim decomposition
-- Evidence map
-- Source-delta signals
-- Echo-chamber risk signal
-- Temporal decay signal
-- Rule-based trust index
-- Explainable verification summary
-- Next.js frontend dashboard
-- FastAPI backend API
+- Real public web retrieval
+- Page-level evidence extraction
+- Gemini-assisted atomic claim decomposition
+- Gemini / heuristic stance classification
+- Source Authority Matrix
+- Reliability priors
+- Temporal reasoning
+- Dempster-Shafer evidence aggregation
+- Provenance-aware evidence graph
+- Echo-chamber / source-origin detection
+- Evidence ledger interface
+- Belief / disbelief / uncertainty visualization
+- Temporal timeline visualization
+- Provenance graph visualization
+- Source evidence matrix
+- Markdown report export
 
-## System Architecture
+## Technical Framework
+
+DeltaMind is built around an evidence-theoretic verification pipeline.
+
+### 1. Atomic Claim Decomposition
+
+Complex claims are broken into smaller, independently checkable units.
+
+Example:
 
 ```text
-User Claim
-  ↓
-Atomic Claim Decomposition
-  ↓
-Mocked Source Retrieval
-  ↓
-Source Authority Classification
-  ↓
-Evidence and Stance Mapping
-  ↓
-Provenance / Independence Analysis
-  ↓
-Delta Signal Detection
-  ↓
-Trust Index Calculation
-  ↓
-Evidence Ledger Dashboard
+Input claim:
+MGM Macau is building a new hotel and casino in 2028.
+
+Atomic claims:
+1. MGM Macau is building a new hotel and casino.
+2. The construction is planned for 2028.
+```
+
+This allows DeltaMind to evaluate which parts of a claim are supported, unsupported, or uncertain.
+
+### 2. Evidence Retrieval and Extraction
+
+DeltaMind retrieves public web sources and extracts relevant evidence spans from full page content.
+
+The system does not rely only on search snippets because snippets can be incomplete or misleading.
+
+### 3. NLI-Style Stance Reasoning
+
+Each evidence span is classified as:
+
+- `supports`
+- `partially_supports`
+- `contradicts`
+- `unclear`
+
+The system follows a conservative verification principle:
+
+> Topical relevance is not enough. Evidence must verify the key entity, action, time, and location in the claim.
+
+### 4. Source Authority Matrix
+
+Each source receives a reliability profile based on source type and domain.
+
+Examples:
+
+| Source Type | Role |
+|---|---|
+| Regulatory source | Highest authority for official/legal claims |
+| Official company source | Strong for company announcements, but may have self-reporting bias |
+| Independent news | Useful for external corroboration |
+| Gaming industry press | Domain-specific source authority |
+| Syndicated news | Useful but requires origin tracing |
+| Reference source | Useful for background, not primary verification |
+
+Each source may include:
+
+- `source_tier`
+- `source_role`
+- `authority_score`
+- `credibility_score`
+- `reliability_prior`
+- `bias_risk`
+- `authority_reason`
+
+### 5. Provenance-Aware Evidence Graph
+
+DeltaMind models verification as a graph:
+
+```text
+Input Claim
+→ Atomic Claims
+→ Evidence Spans
+→ Sources
+→ Source Dependencies
+```
+
+This enables the system to trace each judgment back to its evidence source.
+
+### 6. Echo-Chamber Detection
+
+DeltaMind checks whether multiple sources are truly independent or repeating the same origin.
+
+Signals include:
+
+- Shared named origins
+- Similar evidence text
+- Copied or syndicated reporting
+- Source dependency paths
+- Similarity groups
+
+This helps avoid over-counting repeated information as independent corroboration.
+
+### 7. Temporal Reasoning
+
+DeltaMind compares:
+
+- Claimed event year/date
+- Source publication year
+- Temporal fit or mismatch
+
+Example:
+
+If a claim says an event will happen in **2028**, but no source confirms 2028, the claim should not receive strong support.
+
+### 8. Dempster-Shafer Evidence Aggregation
+
+Instead of a black-box confidence percentage, DeltaMind models evidence as:
+
+- **Belief**: evidence supporting the claim
+- **Disbelief**: evidence contradicting the claim
+- **Uncertainty**: missing, unclear, or insufficient evidence
+
+The final trust index combines:
+
+- Source stance
+- Source authority
+- Reliability prior
+- Source independence
+- Temporal decay
+- Atomic claim coverage
+- Contradiction signals
+- Uncertainty mass
+
+## Interface Structure
+
+The frontend follows a progressive disclosure structure:
+
+```text
+Overall → Detail → More Detail
+```
+
+### Overall
+
+- Trust Index
+- Verdict
+- Belief / disbelief / uncertainty bar
+- Temporal summary
+- Provenance summary
+
+### Detail
+
+- Evidence map
+- Atomic claim checklist
+- Source delta signals
+
+### More Detail
+
+- Provenance graph
+- Evidence graph summary
+- Rule-based scoring breakdown
+- Source evidence matrix
+- Retrieved source cards
+- System notes
+- Markdown report export
+
+## Example Verification
+
+Claim:
+
+```text
+MGM Macau is building a new hotel and casino in 2028.
+```
+
+Expected result:
+
+```text
+Verdict:
+Unsupported / insufficient evidence
+
+Reason:
+The system may find sources related to MGM Macau, existing hotels, casinos, or tourism,
+but unless a source directly confirms a new hotel and casino project planned for 2028,
+the claim remains uncorroborated.
 ```
 
 ## Tech Stack
@@ -65,45 +220,60 @@ Evidence Ledger Dashboard
 
 - Python
 - FastAPI
-- Pydantic
 - Uvicorn
+- Pydantic
+- Gemini API
+- Public web retrieval
+- Rule-based fallback logic
 
 ### Frontend
 
 - Next.js
 - TypeScript
 - Tailwind CSS
-
-### Environment
-
-- Ubuntu
-- Conda
+- Component-based evidence ledger UI
 
 ## Project Structure
 
 ```text
 deltamind-prototype/
-  backend/
-    app/
-      main.py
-      models.py
-      validation_framework.py
-      mock_engine.py
-    requirements.txt
-
-  frontend/
-    src/
-      app/
-        page.tsx
-        layout.tsx
-    package.json
-
-  README.md
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── models.py
+│   │   ├── validation_framework.py
+│   │   ├── real_source_adapter.py
+│   │   ├── web_retriever.py
+│   │   ├── page_fetcher.py
+│   │   ├── evidence_extractor.py
+│   │   ├── ai_claim_decomposer.py
+│   │   ├── ai_stance_classifier.py
+│   │   ├── ai_cache.py
+│   │   ├── source_authority.py
+│   │   ├── source_independence.py
+│   │   ├── temporal_reasoning.py
+│   │   ├── dempster_shafer.py
+│   │   └── evidence_graph.py
+│   └── .env
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   └── page.tsx
+│   │   ├── components/
+│   │   │   └── verification/
+│   │   ├── lib/
+│   │   └── types/
+│   └── package.json
+│
+└── README.md
 ```
 
-## Backend Setup
+## Setup
 
-Create and activate the Conda environment:
+### 1. Backend
+
+Create and activate the conda environment:
 
 ```bash
 conda create -n deltamind python=3.11 -y
@@ -117,196 +287,167 @@ cd backend
 pip install -r requirements.txt
 ```
 
-Run the backend:
+Create `.env`:
+
+```bash
+cat > .env << 'ENV'
+USE_AI_STANCE=true
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-2.0-flash
+GEMINI_API_KEY=your_real_gemini_key_here
+
+MAX_AI_SOURCE_STANCE_CALLS=2
+MAX_AI_ATOMIC_EVAL_SOURCES=2
+ENV
+```
+
+Start backend:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-The backend should be available at:
-
-```text
-http://127.0.0.1:8000
-```
-
-Health check:
+Test backend:
 
 ```bash
 curl --noproxy "*" http://127.0.0.1:8000/health
 ```
 
-Expected response:
+Expected:
 
 ```json
 {"status":"ok"}
 ```
 
-API documentation:
+Test verification endpoint:
 
-```text
-http://127.0.0.1:8000/docs
+```bash
+curl --noproxy "*" -s -X POST http://127.0.0.1:8000/api/verify \
+  -H "Content-Type: application/json" \
+  -d '{"claim":"MGM Macau is building a new hotel and casino in 2028","domain":"real_gaming"}' \
+  | python -m json.tool
 ```
 
-## Frontend Setup
+### 2. Frontend
 
-Install dependencies:
+Start frontend:
 
 ```bash
 cd frontend
 npm install
-```
-
-Create a `.env.local` file:
-
-```bash
-cat > .env.local << 'ENVEOF'
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-ENVEOF
-```
-
-Run the frontend:
-
-```bash
 npm run dev
 ```
 
-The frontend should be available at:
+Create frontend `.env.local` if needed:
+
+```env
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+```
+
+Open:
 
 ```text
 http://localhost:3000
 ```
 
-## Example API Request
+## API
 
-```bash
-curl --noproxy "*" -X POST http://127.0.0.1:8000/api/verify \
-  -H "Content-Type: application/json" \
-  -d '{"claim":"Company X partnered with Company Y to launch Product Z in Macau next Tuesday.","domain":"gaming_industry"}'
+### Health Check
+
+```http
+GET /health
 ```
 
-## Example Output Fields
+### Verify Claim
 
-The backend returns a verification response with fields such as:
+```http
+POST /api/verify
+```
+
+Request:
 
 ```json
 {
-  "input_claim": "...",
-  "normalized_claim": "...",
-  "trust_index": 72,
-  "trust_label": "Likely reliable",
-  "verdict": "Likely reliable",
-  "atomic_claims": [],
-  "sources": [],
-  "delta_signals": [],
-  "evidence_map": [],
-  "scoring_breakdown": {},
-  "ledger_summary": "..."
+  "claim": "MGM Macau is building a new hotel and casino in 2028",
+  "domain": "real_gaming"
 }
 ```
 
-## Evidence Triangulation Ledger
-
-DeltaMind is structured around a ledger-style verification framework.
-
-### Atomic Claims
-
-A complex claim is decomposed into smaller checkable claims.
-
-Example:
+Supported domains:
 
 ```text
-Original claim:
-Company X partnered with Company Y to launch Product Z in Macau next Tuesday.
-
-Atomic claims:
-1. Company X partnered with Company Y.
-2. The partnership involves Product Z.
-3. The launch location is Macau.
-4. The launch date is next Tuesday.
+general_web
+gaming_industry
+real_web
+real_gaming
 ```
 
-### Source Authority Matrix
+Response includes:
 
-Sources are categorized by their verification role:
+- Trust index
+- Verdict
+- Sources
+- Atomic claims
+- Evidence map
+- Belief mass
+- Temporal summary
+- Provenance summary
+- Evidence graph
+- Scoring breakdown
+- System notes
 
-| Tier | Source Type | Role |
-|---|---|---|
-| Tier 0 | Regulatory / legal / government source | Strongest for legal, licensing, and compliance claims |
-| Tier 1 | Official company source | Strong direct evidence, but may contain self-reporting bias |
-| Tier 2 | Independent high-quality news | External confirmation |
-| Tier 3 | Specialized gaming industry press | Domain-specific context |
-| Tier 4 | Aggregators / blogs / forums | Weak evidence or early signal |
-| Tier 5 | Social media / unknown source | Discovery signal only |
+## Current Limitations
 
-### Delta Signals
+The current prototype is functional but still early-stage.
 
-DeltaMind models differences between sources, including:
+Known limitations:
 
-- agreement delta;
-- contradiction delta;
-- authority delta;
-- freshness delta;
-- provenance delta;
-- source independence delta;
-- echo-chamber risk;
-- missing evidence.
+- Gemini free-tier quota can limit repeated AI calls
+- Source retrieval quality depends on public web search results
+- Source-origin tracing is currently heuristic
+- Echo-chamber detection uses named-origin and similarity signals, not full citation graph reconstruction
+- Dempster-Shafer scoring is implemented but still requires calibration
+- Temporal reasoning is currently year-level and should be expanded to event-level timelines
+- Some domain authority profiles still need expansion
 
-### Trust Index
+## Roadmap
 
-The trust index is currently calculated through a rule-based scoring model:
+Next technical steps:
 
-```text
-Trust Index =
-Authority Score
-+ Evidence Directness Score
-+ Independent Corroboration Score
-+ Provenance Clarity Score
-+ Recency Score
-+ Atomic Claim Coverage Score
-- Contradiction Penalty
-- Echo-Chamber Penalty
-- Missing Evidence Penalty
-```
-
-The trust score is mapped to labels such as:
-
-| Score | Label |
-|---:|---|
-| 85–100 | Highly reliable |
-| 70–84 | Likely reliable |
-| 55–69 | Partially verified |
-| 40–54 | Uncertain |
-| 20–39 | Weakly supported |
-| 0–19 | Contradicted / unreliable |
-
-## Current Status
-
-This is an early mocked prototype.
-
-The current version demonstrates the intended system workflow and interface, but it does not yet perform real-time web search or AI-based verification.
-
-## Next Steps
-
-Planned improvements include:
-
-1. Integrate real public web search.
-2. Add AI-based claim decomposition.
-3. Add AI-based evidence extraction.
-4. Add stance / contradiction classification.
-5. Add provenance and source-origin tracing.
-6. Add semantic similarity-based echo-chamber detection.
-7. Improve the scoring model.
-8. Add saved verification cases for demo and evaluation.
-9. Prepare research-oriented evaluation comparing DeltaMind against search/RAG-style baselines.
+1. Improve source-origin tracing
+2. Add embedding-based source similarity
+3. Expand gaming-industry and regulatory source profiles
+4. Strengthen event timeline extraction
+5. Calibrate Dempster-Shafer mass functions
+6. Add stronger citation-chain analysis
+7. Build domain-specific evaluation cases
+8. Improve frontend graph interaction
+9. Add report comparison across multiple claims
+10. Prepare publishable research framing
 
 ## Research Direction
 
-DeltaMind is designed as a possible research system for explainable AI-assisted news verification.
+DeltaMind reframes verification from a retrieval-and-answering problem into a structured evidence modeling problem.
 
-The potential research contribution is:
+The core contribution is:
 
-> DeltaMind integrates atomic claim decomposition, source authority modeling, provenance tracking, echo-chamber detection, temporal reasoning, and evidence-aware confidence scoring into a unified verification ledger for public web and gaming-industry claims.
+```text
+DeltaMind identifies reliability gaps between information sources and transforms those gaps into explainable confidence signals for AI systems and human decision-makers.
+```
 
-## License
+Instead of saying only “true” or “false,” DeltaMind explains:
 
-This project is currently for internal research and prototype development.
+- Which parts of a claim are supported
+- Which parts lack evidence
+- Which sources are authoritative
+- Which sources may be dependent
+- Whether evidence is temporally valid
+- How much belief, disbelief, and uncertainty remain
+
+## Repository
+
+GitHub:
+
+```text
+git@github.com:UtGong/DeltaMind.git
+```
